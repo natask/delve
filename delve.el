@@ -438,15 +438,15 @@ can be an integer or symbols `:point', `:first', `:next',
 `:prev', `:last'. All positions refer to the actual list; any filtering is
 ignored."
   (interactive (list (current-buffer) :point))
-  (let* ((ewoc (with-current-buffer buf lister-local-ewoc))
-	 (item     (lister-get-data-at ewoc pos))
+  (with-current-buffer buf
+    (let* ((item     (lister-get-data-at lister-local-ewoc pos))
 	 (sublist  (if operator-fn
 		       (funcall operator-fn item)
 		     (delve-expand-item item))))
     (if sublist
 	(with-temp-message "Inserting expansion results..."
-	  (lister-insert-sublist-below ewoc pos sublist))
-      (user-error "No expansion found"))))
+	  (lister-insert-sublist-below lister-local-ewoc pos sublist))
+      (user-error "No expansion found")))))
 
 ;; -----------------------------------------------------------
 ;;; * Delve Mode: Interactive Functions, Mode Definition
@@ -462,25 +462,25 @@ Return the accumulated results.
 If no item is marked, apply the function to the item at point
 unless MARK-CURRENT-IF-NONE is nil. Remove the marks after
 operation unless UNMARK is nil."
-  (let* ((ewoc (lister-get-ewoc buf))
-         (marked-items (=/ 0 (lister-count-marked-items ewoc)))
+  (with-current-buffer buf
+  (let* ((marked-items (=/ 0 (lister-count-marked-items lister-local-ewoc)))
 	 (mark-pred-fn (buffer-local-value 'lister-local-marking-predicate buf)))
     ;; maybe mark item at point
     (when (and marked-items
 	       mark-current-if-none)
-      (if (lister-node-markable-p (lister-get-node-at ewoc :point))
+      (if (lister-node-markable-p (lister-get-node-at lister-local-ewoc :point))
 	  (user-error "Item at point has to be zettel")
-	(lister-mark-unmark-at ewoc :point 't)
+	(lister-mark-unmark-at lister-local-ewoc :point 't)
 	(setq marked-items 't)
 	;; always unmark since the mark is internal only
 	(setq unmark t)))
     ;; now do the walk:
     (unless marked-items
       (user-error "There are no marked items"))
-    (let* ((res (lister-walk-marked-nodes ewoc action-fn)))
+    (let* ((res (lister-walk-marked-nodes lister-local-ewoc action-fn)))
       (when unmark
-	(lister-mark-unmark-list ewoc :first :last 'nil))
-      res)))
+	(lister-mark-unmark-list lister-local-ewoc :first :last 'nil))
+      res))))
 
 ;; * Filter
 
@@ -514,25 +514,27 @@ as-is."
   "Show only zettel items in BUF matching TAG-PATTERN."
   (interactive (list (current-buffer)
 		     (read-string "Enter tag pattern (regexp): ")))
+  (with-current-buffer buf
   (when (string-empty-p tag-pattern)
     (user-error "No pattern for filtering"))
-  (lister-set-filter (lister-get-ewoc buf) (delve-filter--build-tag-filter tag-pattern)))
+  (lister-set-filter lister-local-ewoc (delve-filter--build-tag-filter tag-pattern))))
 
 (defun delve-filter-by-title (buf title-pattern)
   "Show only zettel items in BUF matching TITLE-PATTERN."
   (interactive (list (current-buffer)
 		     (read-string "Enter title pattern (regexp): ")))
+  (with-current-buffer buf
   (when (string-empty-p title-pattern)
     (user-error "No pattern for filtering"))
-  (lister-set-filter (lister-get-ewoc buf) (delve-filter--build-title-filter title-pattern)))
+  (lister-set-filter lister-local-ewoc (delve-filter--build-title-filter title-pattern))))
 
 (defun delve-filter-remove (buf)
   "Remove active filter in delve buffer BUF."
   (interactive (list (current-buffer)))
-  (let ((ewoc (lister-get-ewoc buf)))
-  (unless (lister-filter-active-p ewoc)
+  (with-current-buffer buf
+  (unless (lister-filter-active-p lister-local-ewoc)
     (user-error "No filter active"))
-  (lister-set-filter ewoc nil)))
+  (lister-set-filter lister-local-ewoc nil)))
 
 ;; * Sort
 
@@ -558,14 +560,14 @@ sorting the sublist at point."
   (interactive (list (current-buffer)
 		     :point
 		     (delve-sort--offer-predicates)))
-  (let ((ewoc (lister-get-ewoc buf))
-        data)
-    (when (lister-empty-p ewoc)
+    (with-current-buffer buf
+  (let (data)
+    (when (lister-empty-p lister-local-ewoc)
       (user-error "Nothing to sort"))
-    (unless (and (setq data (lister-get-data-at ewoc pos))
+    (unless (and (setq data (lister-get-data-at lister-local-ewoc pos))
 		 (delve-zettel-p data))
       (user-error "For sorting, point must be on a zettel item"))
-    (lister-sort-sublist-at ewoc :point sort-pred)))
+    (lister-sort-sublist-at lister-local-ewoc :point sort-pred))))
 
 ;; * Refresh or update the display in various ways
 
@@ -573,21 +575,22 @@ sorting the sublist at point."
   "Refresh all items in BUF."
   (interactive (list (current-buffer)))
   (with-temp-message "Updating the whole buffer, that might take some time...."
-  (lister-refresh-list (lister-get-ewoc buf))))
+    (with-current-buffer buf
+  (lister-refresh-list lister-local-ewoc))))
 
 (defun delve-refresh-tainted-items (buf)
   "Update all items in BUF which are marked as needing update.
 Also update all marked items, if any."
   (interactive (list (current-buffer)))
-  (let ((ewoc (lister-get-ewoc buf)))
+  (with-current-buffer buf
   (cl-labels ((tainted-zettel-p (data)
 				(and (delve-zettel-p data)
 				     (or (delve-zettel-needs-update data)
-					 (lister-get-marked-at-p ewoc :point))))
+					 (lister-get-marked-at-p lister-local-ewoc :point))))
 	      (update-zettel (data)
 			     (when-let* ((new-item (delve-db-update-item data)))
-			       (lister-replace-at ewoc :point new-item))))
-    (let ((res (lister-walk-nodes ewoc #'update-zettel :first :last #'tainted-zettel-p)))
+			       (lister-replace-at lister-local-ewoc :point new-item))))
+    (let ((res (lister-walk-nodes lister-local-ewoc #'update-zettel :first :last #'tainted-zettel-p)))
       (message (if res
 		   (format "Updated %d items" (length res))
 		 "All items up to date. To force an update, mark the item(s) and redo this function"))))))
@@ -595,9 +598,9 @@ Also update all marked items, if any."
 (defun delve-revert (buf)
   "Revert delve buffer BUF to its initial list."
   (interactive (list (current-buffer)))
-  (let ((ewoc (lister-get-ewoc buf)))
-    (lister-set-list ewoc delve-local-initial-list)
-    (lister-goto ewoc :first)))
+  (with-current-buffer buf
+    (lister-set-list lister-local-ewoc delve-local-initial-list)
+    (lister-goto lister-local-ewoc :first)))
 
 ;; * Collect items
 
@@ -630,8 +633,8 @@ switch to the target buffer."
 (defun delve-expand-insert-tolinks ()
   "Insert all tolinks from the item at point."
   (interactive)
-  (let ((ewoc (lister-get-ewoc (current-buffer))))
-  (unless (delve-zettel-p (lister-get-data-at ewoc :point))
+  (with-current-buffer (current-buffer)
+  (unless (delve-zettel-p (lister-get-data-at lister-local-ewoc :point))
     (user-error "This item has no tolinks"))
   (delve-expand-and-insert (current-buffer)
 			   :point
@@ -640,8 +643,8 @@ switch to the target buffer."
 (defun delve-expand-insert-backlinks ()
   "Insert all backlinks from the item at point."
   (interactive)
-  (let ((ewoc (lister-get-ewoc (current-buffer))))
-  (unless (delve-zettel-p (lister-get-data ewoc :point))
+  (with-current-buffer (current-buffer)
+  (unless (delve-zettel-p (lister-get-data lister-local-ewoc :point))
     (user-error "This item has no backlinks"))
   (delve-expand-and-insert (current-buffer)
 			   :point
@@ -650,12 +653,12 @@ switch to the target buffer."
 (defun delve-expand-toggle-sublist ()
   "Close or open the item's sublist at point."
   (interactive)
+  (with-current-buffer (current-buffer)
   (let* ((buf (current-buffer))
-         (ewoc (lister-get-ewoc buf))
 	 (pos :point))
-    (if (lister-sublist-below-p ewoc pos)
-	(lister-delete-sublist-below ewoc pos)
-      (delve-expand-and-insert buf pos))))
+    (if (lister-sublist-below-p lister-local-ewoc pos)
+	(lister-delete-sublist-below lister-local-ewoc pos)
+      (delve-expand-and-insert buf pos)))))
 
 (defun delve-expand-in-new-bufffer (buf pos &optional expand-parent)
   "Expand the item at point in a new buffer.
@@ -664,17 +667,17 @@ the item at point belongs in a new buffer.
 
 BUF is a lister buffer, POS marks the position of the item."
   (interactive (list (current-buffer) :point current-prefix-arg))
+  (with-current-buffer buf
   (unless lister-local-marker-list
     (user-error "There are no items in this buffer"))
-  (let* (ewoc (list-get-ewoc buf))
-         (item-at-point (lister-get-data-at ewoc pos)))
+  (let* ((item-at-point (lister-get-data-at lister-local-ewoc pos)))
     (if expand-parent
 	(if (not (delve-zettel-p item-at-point))
 	    (user-error "Only zettel sublists can be re-opened in a new buffer")
-	  (pcase-let* ((`(,beg ,end _ ) (lister--locate-sublist ewoc pos)))
-	    (let* ((items (lister-get-list ewoc beg end)))
+	  (pcase-let* ((`(,beg ,end _ ) (lister--locate-sublist lister-local-ewoc pos)))
+	    (let* ((items (lister-get-list lister-local-ewoc beg end)))
 	      (delve items))))
-      (delve item-at-point)))
+      (delve item-at-point))))
 
 ;;; * Remote editing: add / remove tags
 
@@ -684,13 +687,13 @@ BUF must be a delve buffer.
 
 EDIT-FN has to accept two arguments: an org roam file, to which
 the editing will apply, and an additional argument ARG."
-  (let ((ewoc (lister-get-ewoc buf)))
+  (with-current-buffer buf
   (cl-labels ((add-it (data)
 		      (funcall edit-fn (delve-zettel-file data) arg)
 		      (setf (delve-zettel-needs-update data) t)
-		      (lister-replace-at ewoc :point data)))
+		      (lister-replace-at lister-local-ewoc :point data)))
     (let ((res (delve-walk-marked-items buf #'add-it)))
-      (message "Changed %d items" (or (length res) 0))))))
+      (message "Changed %d items" (or (length res) 0)))))))
 
 (defun delve-add-tag ()
   "Add tags to all marked zettel or the zettel at point."
@@ -712,10 +715,10 @@ the editing will apply, and an additional argument ARG."
 (defun delve-key-visit-zettel (buf pos)
   "Visit the zettel at point."
   (interactive (list (current-buffer) :point))
-  (let ((ewoc (lister-get-ewoc buf)))
-  (unless (lister-get-node-at ewoc pos)
+    (with-current-buffer buf
+  (unless (lister-get-node-at lister-local-ewoc pos)
     (user-error "No item to visit"))
-  (let ((data (lister-get-data-at ewoc pos)))
+  (let ((data (lister-get-data-at lister-local-ewoc pos)))
     (pcase data
       ((pred delve-error-p)  (switch-to-buffer (delve-error-buffer data)))
       ((pred delve-zettel-p) (find-file (delve-zettel-file data)))
@@ -829,16 +832,15 @@ The new buffer name will be created by using
   (let* ((buf (generate-new-buffer (format delve-buffer-name-format buffer-name))))
     (with-current-buffer buf
       (delve-mode)
-      (let ((ewoc (lister-get-ewoc buf)))
-      (lister-set-list ewoc items)
+      (lister-set-list lister-local-ewoc items)
       ;; --- Now add delve specific stuff:
       ;; do not mark searches:
-      (lister-set-marking-predicate ewoc #'delve-zettel-p)
+      (lister-set-marking-predicate lister-local-ewoc #'delve-zettel-p)
       (setq-local delve-local-initial-list items)
-      (lister-set-header ewoc heading)
-      (lister-goto ewoc :first)
+      (lister-set-header lister-local-ewoc heading)
+      (lister-goto lister-local-ewoc :first)
       ;(lister-highlight-mode)
-      ))
+      )
     buf))
 
 (defun delve-add-to-buffer (target-buffer item-or-list)
@@ -846,10 +848,10 @@ The new buffer name will be created by using
   (unless (and (buffer-live-p target-buffer)
 	       (delve-buffer-p target-buffer))
     (user-error "Target buffer does not exist"))
-  (let ((ewoc (lister-get-ewoc target-buffer)))
+  (with-current-buffer target-buffer
   (if (listp item-or-list)
-      (lister-add-list ewoc item-org-list)
-    (lister-add ewoc item-org-list))
+      (lister-add-list lister-local-ewoc item-org-list)
+    (lister-add lister-local-ewoc item-org-list))
   ;; unhighlight inserted item if buffer is not visible:
   ;(unless (get-buffer-window target-buffer)
     ;(lister-sensor-leave target-buffer))
